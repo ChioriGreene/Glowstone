@@ -1,15 +1,20 @@
 package net.glowstone.block;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import net.glowstone.block.blocktype.*;
 import net.glowstone.block.itemtype.ItemDoor;
 import net.glowstone.block.itemtype.ItemPlaceAs;
 import net.glowstone.block.itemtype.ItemSign;
 import net.glowstone.block.itemtype.ItemType;
+<<<<<<< HEAD
 
 import org.bukkit.Material;
+=======
+>>>>>>> b6ad16a738facb7556b42eddfeece51ca84ecbe4
 
-import java.util.HashMap;
-import java.util.Map;
+import org.bukkit.Material;
 
 /**
  * The lookup table for block and item types.
