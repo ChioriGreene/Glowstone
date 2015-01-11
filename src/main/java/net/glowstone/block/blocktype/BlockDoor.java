@@ -18,13 +18,11 @@ import org.bukkit.util.Vector;
 
 public class BlockDoor extends BlockType {
 
+    @Override
     public boolean canPlaceAt(GlowBlock block, BlockFace against) {
         return (against == BlockFace.UP);
     }
 
-    /**
-     * Removes the adjacent door block to the door
-     */
     @Override
     public void blockDestroy(GlowPlayer player, GlowBlock block, BlockFace face) {
         GlowBlockState state = block.getState();
@@ -32,21 +30,16 @@ public class BlockDoor extends BlockType {
 
         if (data instanceof Door) {
             Door door = (Door) data;
-            if (door.isTopHalf()) {
-                Block b = block.getRelative(BlockFace.DOWN);
-                if (b.getType() == block.getType())
-                    b.setType(Material.AIR);
-            } else {
-                Block b = block.getRelative(BlockFace.UP);
-                if (b.getType() == block.getType())
-                    b.setType(Material.AIR);
+            Block b = block.getRelative(door.isTopHalf() ? BlockFace.DOWN : BlockFace.UP);
+            if (b.getType() == block.getType()) {
+                b.setType(Material.AIR);
             }
+        } else {
+            warnMaterialData(Door.class, data);
         }
     }
-    
-    /**
-     * Returns the corresponding ItemDoor to the one being broken.
-     */
+
+    @Override
     public Collection<ItemStack> getDrops(GlowBlock block, ItemStack tool) {
         Material dropType = null;
         switch (block.getType()) {
@@ -74,17 +67,14 @@ public class BlockDoor extends BlockType {
             default:
                 break;
         }
-        
-        if (dropType != null)
+
+        if (dropType != null) {
             return Arrays.asList(new ItemStack(dropType, 1));
-        else
-            return new ArrayList<ItemStack>();
+        } else {
+            return new ArrayList<>();
+        }
     }
 
-    /**
-     * Places the door held by the player, sets the direction it's facing and
-     * creates the top half of the door.
-     */
     @Override
     public void placeBlock(GlowPlayer player, GlowBlockState state, BlockFace face, ItemStack holding, Vector clickedLoc) {
         super.placeBlock(player, state, face, holding, clickedLoc);
@@ -96,40 +86,40 @@ public class BlockDoor extends BlockType {
 
             GlowBlock leftBlock = null;
             switch (facing) {
-            case NORTH:
-                leftBlock = state.getBlock().getRelative(BlockFace.WEST);
-                break;
-            case WEST:
-                leftBlock = state.getBlock().getRelative(BlockFace.SOUTH);
-                break;
-            case SOUTH:
-                leftBlock = state.getBlock().getRelative(BlockFace.EAST);
-                break;
-            case EAST:
-                leftBlock = state.getBlock().getRelative(BlockFace.NORTH);
-                break;
+                case NORTH:
+                    leftBlock = state.getBlock().getRelative(BlockFace.WEST);
+                    break;
+                case WEST:
+                    leftBlock = state.getBlock().getRelative(BlockFace.SOUTH);
+                    break;
+                case SOUTH:
+                    leftBlock = state.getBlock().getRelative(BlockFace.EAST);
+                    break;
+                case EAST:
+                    leftBlock = state.getBlock().getRelative(BlockFace.NORTH);
+                    break;
             }
 
             if (leftBlock != null && leftBlock.getState().getData() instanceof Door) {
                 switch (facing) {
-                case NORTH:
-                    ((Door) data).setData((byte) 6);
-                    break;
-                case WEST:
-                    ((Door) data).setData((byte) 5);
-                    break;
-                case SOUTH:
-                    ((Door) data).setData((byte) 4);
-                    break;
-                case EAST:
-                    ((Door) data).setData((byte) 7);
-                    break;
+                    case NORTH:
+                        data.setData((byte) 6);
+                        break;
+                    case WEST:
+                        data.setData((byte) 5);
+                        break;
+                    case SOUTH:
+                        data.setData((byte) 4);
+                        break;
+                    case EAST:
+                        data.setData((byte) 7);
+                        break;
                 }
             }
 
             GlowBlock topHalf = state.getBlock().getRelative(BlockFace.UP);
-
             topHalf.setType(state.getType());
+
             GlowBlockState topState = topHalf.getState();
             ((Door) topState.getData()).setTopHalf(true);
             topState.update();
@@ -138,15 +128,13 @@ public class BlockDoor extends BlockType {
         }
     }
 
-    /**
-     * Opens and closes the door when right-clicked by the player.
-     */
     @Override
     public boolean blockInteract(GlowPlayer player, GlowBlock block, BlockFace face, Vector clickedLoc) {
         super.blockInteract(player, block, face, clickedLoc);
 
-        if (block.getType() == Material.IRON_DOOR_BLOCK)
+        if (block.getType() == Material.IRON_DOOR_BLOCK) {
             return false;
+        }
 
         GlowBlockState state = block.getState();
         MaterialData data = state.getData();
@@ -155,19 +143,15 @@ public class BlockDoor extends BlockType {
             Door door = (Door) data;
             if (door.isTopHalf()) {
                 door = null;
-                block = block.getWorld().getBlockAt(block.getX(), block.getY() - 1, block.getZ());
-                if (block != null) {
-                    state = block.getState();
-                    data = state.getData();
-                    if (data instanceof Door) {
-                        door = (Door) data;
-                    }
+                state = block.getRelative(BlockFace.DOWN).getState();
+                if (state.getData() instanceof Door) {
+                    door = (Door) state.getData();
                 }
             }
 
-            if (door != null)
+            if (door != null) {
                 door.setOpen(!door.isOpen());
-
+            }
             state.update(true);
         }
 

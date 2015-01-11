@@ -1,7 +1,6 @@
 package net.glowstone.net.handler.play.player;
 
 import com.flowpowered.networking.MessageHandler;
-
 import net.glowstone.EventFactory;
 import net.glowstone.GlowWorld;
 import net.glowstone.block.GlowBlock;
@@ -10,7 +9,6 @@ import net.glowstone.block.blocktype.BlockType;
 import net.glowstone.entity.GlowPlayer;
 import net.glowstone.net.GlowSession;
 import net.glowstone.net.message.play.player.DiggingMessage;
-
 import org.bukkit.Effect;
 import org.bukkit.GameMode;
 import org.bukkit.Material;
