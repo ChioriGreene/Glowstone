@@ -1,5 +1,6 @@
 package net.glowstone;
 
+import lombok.Data;
 import net.glowstone.block.GlowBlock;
 import net.glowstone.block.GlowBlockState;
 import net.glowstone.block.ItemTable;
@@ -23,61 +24,15 @@ import java.util.logging.Level;
 public final class GlowChunk implements Chunk {
 
     /**
-     * A chunk key represents the X and Z coordinates of a chunk and implements
-     * the {@link #hashCode()} and {@link #equals(Object)} methods making it
+     * A chunk key represents the X and Z coordinates of a chunk in a manner
      * suitable for use as a key in a hash table or set.
-     * @author Graham Edgecombe
      */
+    @Data
     public static final class Key {
-
         /**
          * The coordinates.
          */
         private final int x, z;
-
-        /**
-         * Creates a new chunk key with the specified X and Z coordinates.
-         * @param x The X coordinate.
-         * @param z The Z coordinate.
-         */
-        public Key(int x, int z) {
-            this.x = x;
-            this.z = z;
-        }
-
-        /**
-         * Gets the X coordinate.
-         * @return The X coordinate.
-         */
-        public int getX() {
-            return x;
-        }
-
-        /**
-         * Gets the Z coordinate.
-         * @return The Z coordinate.
-         */
-        public int getZ() {
-            return z;
-        }
-
-        @Override
-        public int hashCode() {
-            return 31 * x + z;
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (this == obj) return true;
-            if (obj == null || getClass() != obj.getClass()) return false;
-            Key other = (Key) obj;
-            return x == other.x && z == other.z;
-        }
-
-        @Override
-        public String toString() {
-            return "ChunkKey{" + x + ',' + z + '}';
-        }
     }
 
     /**
@@ -178,6 +133,13 @@ public final class GlowChunk implements Chunk {
     private byte[] biomes;
 
     /**
+     * The height map values values of each column, or null if it is unloaded.
+     * The height for a column is one plus the y-index of the highest non-air
+     * block in the column.
+     */
+    private byte[] heightMap;
+
+    /**
      * The tile entities that reside in this chunk.
      */
     private final HashMap<Integer, TileEntity> tileEntities = new HashMap<>();
@@ -263,8 +225,11 @@ public final class GlowChunk implements Chunk {
     }
 
     @Override
-    public GlowChunkSnapshot getChunkSnapshot(boolean includeMaxblocky, boolean includeBiome, boolean includeBiomeTempRain) {
-        return new GlowChunkSnapshot(x, z, world, sections, includeMaxblocky, includeBiome ? biomes.clone() : null, includeBiomeTempRain);
+    public GlowChunkSnapshot getChunkSnapshot(boolean includeMaxBlockY, boolean includeBiome, boolean includeBiomeTempRain) {
+        return new GlowChunkSnapshot(x, z, world, sections,
+                includeMaxBlockY ? heightMap.clone() : null,
+                includeBiome ? biomes.clone() : null,
+                includeBiomeTempRain);
     }
 
     /**
@@ -349,6 +314,7 @@ public final class GlowChunk implements Chunk {
         System.arraycopy(initSections, 0, sections, 0, Math.min(sections.length, initSections.length));
 
         biomes = new byte[WIDTH * HEIGHT];
+        heightMap = new byte[WIDTH * HEIGHT];
 
         // tile entity initialization
         for (int i = 0; i < sections.length; ++i) {
@@ -429,7 +395,7 @@ public final class GlowChunk implements Chunk {
      * @param type The type.
      */
     public void setType(int x, int z, int y, int type) {
-        if (type < 0 || type >= 256)
+        if (type < 0 || type > 0xfff)
             throw new IllegalArgumentException("Block type out of range: " + type);
 
         ChunkSection section = getSection(y);
@@ -454,15 +420,24 @@ public final class GlowChunk implements Chunk {
             tileEntities.remove(tileEntityIndex).destroy();
         }
 
-        // update the air count
+        // update the air count and height map
         int index = section.index(x, y, z);
+        int heightIndex = z * WIDTH + x;
         if (type == 0) {
             if (section.types[index] != 0) {
                 section.count--;
             }
+            if (heightMap[heightIndex] == y + 1) {
+                // erased just below old height map -> lower
+                heightMap[heightIndex] = (byte) lowerHeightMap(x, y, z);
+            }
         } else {
             if (section.types[index] == 0) {
                 section.count++;
+            }
+            if (heightMap[heightIndex] <= y) {
+                // placed between old height map and top -> raise
+                heightMap[heightIndex] = (byte) Math.min(y + 1, 255);
             }
         }
         // update the type - also sets metadata to 0
@@ -476,6 +451,18 @@ public final class GlowChunk implements Chunk {
 
         // create a new tile entity if we need
         createEntity(x, y, z, type);
+    }
+
+    /**
+     * Scan downwards to determine the new height map value.
+     */
+    private int lowerHeightMap(int x, int y, int z) {
+        for (--y; y >= 0; --y) {
+            if (getType(x, z, y) != 0) {
+                break;
+            }
+        }
+        return y + 1;
     }
 
     /**
@@ -565,7 +552,7 @@ public final class GlowChunk implements Chunk {
      * @return The biome.
      */
     public int getBiome(int x, int z) {
-        if (biomes == null) return -1;
+        if (biomes == null && !load()) return 0;
         return biomes[z * WIDTH + x] & 0xFF;
     }
 
@@ -592,6 +579,52 @@ public final class GlowChunk implements Chunk {
             throw new IllegalArgumentException("Biomes array not of length " + biomes.length);
         }
         System.arraycopy(newBiomes, 0, biomes, 0, biomes.length);
+    }
+
+    /**
+     * Get the height map value of a column within this chunk.
+     * @param x The X coordinate.
+     * @param z The Z coordinate.
+     * @return The height map value.
+     */
+    public int getHeight(int x, int z) {
+        if (heightMap == null && !load()) return 0;
+        return heightMap[z * WIDTH + x] & 0xff;
+    }
+
+    /**
+     * Set the entire height map of this chunk.
+     * @param newHeightMap The height map.
+     */
+    public void setHeightMap(int[] newHeightMap) {
+        if (heightMap == null) {
+            throw new IllegalStateException("Must initialize chunk first");
+        }
+        if (newHeightMap.length != heightMap.length) {
+            throw new IllegalArgumentException("Height map not of length " + heightMap.length);
+        }
+        for (int i = 0; i < heightMap.length; ++i) {
+            heightMap[i] = (byte) newHeightMap[i];
+        }
+    }
+
+    /**
+     * Automatically fill the height map after chunks have been initialized.
+     */
+    public void automaticHeightMap() {
+        // determine max Y chunk section at a time
+        int sy = sections.length - 1;
+        for (; sy >= 0; --sy) {
+            if (sections[sy] != null) {
+                break;
+            }
+        }
+        int y = (sy + 1) * 16;
+        for (int x = 0; x < WIDTH; ++x) {
+            for (int z = 0; z < HEIGHT; ++z) {
+                heightMap[z * WIDTH + x] = (byte) lowerHeightMap(x, y, z);
+            }
+        }
     }
 
     // ======== Helper functions ========

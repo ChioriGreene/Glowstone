@@ -10,6 +10,7 @@ import net.glowstone.entity.meta.ClientSettings;
 import net.glowstone.entity.meta.MetadataIndex;
 import net.glowstone.entity.meta.MetadataMap;
 import net.glowstone.entity.meta.profile.PlayerProfile;
+import net.glowstone.entity.objects.GlowItem;
 import net.glowstone.inventory.GlowInventory;
 import net.glowstone.inventory.InventoryMonitor;
 import net.glowstone.io.PlayerDataService;
@@ -253,6 +254,7 @@ public final class GlowPlayer extends GlowHumanEntity implements Player {
      */
     public GlowPlayer(GlowSession session, PlayerProfile profile, PlayerDataService.PlayerReader reader) {
         super(initLocation(session, reader), profile);
+        setBoundingBox(0.6, 1.8);
         this.session = session;
 
         chunkLock = world.newChunkLock(getName());
@@ -274,7 +276,7 @@ public final class GlowPlayer extends GlowHumanEntity implements Player {
         if (server.isHardcore()) {
             gameMode |= 0x8;
         }
-        session.send(new JoinGameMessage(SELF_ID, gameMode, world.getEnvironment().getId(), world.getDifficulty().getValue(), session.getServer().getMaxPlayers(), type, false));
+        session.send(new JoinGameMessage(SELF_ID, gameMode, world.getEnvironment().getId(), world.getDifficulty().getValue(), session.getServer().getMaxPlayers(), type, world.getGameRuleMap().getBoolean("reducedDebugInfo")));
         setGameModeDefaults();
 
         // send server brand and supported plugin channels
@@ -294,6 +296,9 @@ public final class GlowPlayer extends GlowHumanEntity implements Player {
         joinTime = System.currentTimeMillis();
         reader.readData(this);
         reader.close();
+
+        // Add player to list of online players
+        getServer().setPlayerOnline(this, true);
 
         // save data back out
         saveData();
@@ -370,6 +375,7 @@ public final class GlowPlayer extends GlowHumanEntity implements Player {
         getInventory().removeViewer(this);
         getInventory().getCraftingInventory().removeViewer(this);
         permissions.clearPermissions();
+        getServer().setPlayerOnline(this, false);
         super.remove();
     }
 
@@ -525,7 +531,7 @@ public final class GlowPlayer extends GlowHumanEntity implements Player {
         // second step: package chunks into bulk packets
         final int maxSize = 0x1fff00;  // slightly under protocol max size of 0x200000
         final boolean skylight = world.getEnvironment() == World.Environment.NORMAL;
-        final List<ChunkDataMessage> messages = new LinkedList<>();
+        List<ChunkDataMessage> messages = new LinkedList<>();
         int bulkSize = 6; // size of bulk header
 
         // split the chunks into bulk packets based on how many fit
@@ -539,7 +545,7 @@ public final class GlowPlayer extends GlowHumanEntity implements Player {
             if (bulkSize + messageSize > maxSize) {
                 // send out what we have so far
                 session.send(new ChunkBulkMessage(skylight, messages));
-                messages.clear();
+                messages = new LinkedList<>();
                 bulkSize = 6;
             }
 
@@ -550,7 +556,6 @@ public final class GlowPlayer extends GlowHumanEntity implements Player {
         // send the leftovers
         if (!messages.isEmpty()) {
             session.send(new ChunkBulkMessage(skylight, messages));
-            messages.clear();
         }
 
         // send visible tile entity data
@@ -579,9 +584,9 @@ public final class GlowPlayer extends GlowHumanEntity implements Player {
     private void spawnAt(Location location) {
         // switch worlds
         GlowWorld oldWorld = world;
-        world.getEntityManager().deallocate(this);
+        world.getEntityManager().unregister(this);
         world = (GlowWorld) location.getWorld();
-        world.getEntityManager().allocate(this);
+        world.getEntityManager().register(this);
 
         // switch chunk set
         // no need to send chunk unload messages - respawn unloads all chunks
@@ -629,6 +634,15 @@ public final class GlowPlayer extends GlowHumanEntity implements Player {
         // fire event and perform spawn
         PlayerRespawnEvent event = new PlayerRespawnEvent(this, dest, spawnAtBed);
         EventFactory.callEvent(event);
+        if (event.getRespawnLocation().getWorld().equals(getWorld()) && knownEntities.size() > 0) {
+            // we need to manually reset all known entities if the player respawns in the same world
+            List<Integer> entityIds = new ArrayList<>(knownEntities.size());
+            for (GlowEntity e : knownEntities) {
+                entityIds.add(e.getEntityId());
+            }
+            session.send(new DestroyEntitiesMessage(entityIds));
+            knownEntities.clear();
+        }
         spawnAt(event.getRespawnLocation());
 
         // just in case any items are left in their inventory after they respawn
@@ -1247,7 +1261,7 @@ public final class GlowPlayer extends GlowHumanEntity implements Player {
 
     @Override
     public void sendRawMessage(String message) {
-        // todo: convert old-style formatting to json
+        // old-style formatting to json conversion is in TextMessage
         session.send(new ChatMessage(message));
     }
 
@@ -1676,6 +1690,20 @@ public final class GlowPlayer extends GlowHumanEntity implements Player {
         updateInventory();
     }
 
+    @Override
+    public GlowItem drop(ItemStack stack) {
+        GlowItem dropping = super.drop(stack);
+        if (dropping != null) {
+            PlayerDropItemEvent event = new PlayerDropItemEvent(this, dropping);
+            EventFactory.callEvent(event);
+            if (event.isCancelled()) {
+                dropping.remove();
+                dropping = null;
+            }
+        }
+        return dropping;
+    }
+
     ////////////////////////////////////////////////////////////////////////////
     // Player-specific time and weather
 
@@ -1714,7 +1742,7 @@ public final class GlowPlayer extends GlowHumanEntity implements Player {
 
     public void sendTime() {
         long time = getPlayerTime();
-        if (!timeRelative) {
+        if (!timeRelative || !world.getGameRuleMap().getBoolean("doDaylightCycle")) {
             time = -time; // negative value indicates fixed time
         }
         session.send(new TimeMessage(world.getFullTime(), time));
@@ -1762,7 +1790,7 @@ public final class GlowPlayer extends GlowHumanEntity implements Player {
         if (hiddenEntities.contains(player.getUniqueId())) return;
 
         hiddenEntities.add(player.getUniqueId());
-        if (knownEntities.remove(player)) {
+        if (knownEntities.remove((GlowEntity) player)) {
             session.send(new DestroyEntitiesMessage(Arrays.asList(player.getEntityId())));
         }
         session.send(UserListItemMessage.removeOne(player.getUniqueId()));

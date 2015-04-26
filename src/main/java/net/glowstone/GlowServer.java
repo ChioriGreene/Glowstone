@@ -5,11 +5,20 @@ import io.netty.channel.ChannelFuture;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.IOException;
+import java.net.BindException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.nio.file.FileVisitResult;
+import java.nio.file.FileVisitor;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.security.KeyPair;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -26,7 +35,11 @@ import net.glowstone.command.ColorCommand;
 import net.glowstone.command.TellrawCommand;
 import net.glowstone.constants.GlowEnchantment;
 import net.glowstone.constants.GlowPotionEffect;
+import net.glowstone.entity.EntityIdManager;
 import net.glowstone.entity.GlowPlayer;
+import net.glowstone.generator.CakeTownGenerator;
+import net.glowstone.generator.SurfaceGenerator;
+import net.glowstone.generator.UndergroundGenerator;
 import net.glowstone.inventory.CraftingManager;
 import net.glowstone.inventory.GlowInventory;
 import net.glowstone.inventory.GlowItemFactory;
@@ -41,12 +54,14 @@ import net.glowstone.scheduler.WorldScheduler;
 import net.glowstone.util.GlowHelpMap;
 import net.glowstone.util.GlowServerIcon;
 import net.glowstone.util.GlowUnsafeValues;
+import net.glowstone.util.LibraryManager;
 import net.glowstone.util.SecurityUtils;
 import net.glowstone.util.ServerConfig;
 import net.glowstone.util.ShutdownMonitorThread;
 import net.glowstone.util.bans.GlowBanList;
 import net.glowstone.util.bans.UuidListFile;
 
+import org.apache.commons.lang.Validate;
 import org.bukkit.BanEntry;
 import org.bukkit.BanList;
 import org.bukkit.Bukkit;
@@ -94,6 +109,10 @@ import org.bukkit.scoreboard.ScoreboardManager;
 import org.bukkit.util.CachedServerIcon;
 import org.bukkit.util.permissions.DefaultPermissions;
 
+import com.avaje.ebean.config.DataSourceConfig;
+import com.avaje.ebean.config.dbplatform.SQLitePlatform;
+import com.avaje.ebeaninternal.server.lib.sql.TransactionIsolation;
+
 /**
  * The core class of the Glowstone server.
  * @author Graham Edgecombe
@@ -122,21 +141,15 @@ public final class GlowServer implements Server {
      */
     public static void main(String[] args) {
         try {
-            // check for console
-            /*if (System.console() == null) {
-                ConsoleMissing.display();
-                return;
-            }*/
-
-            ConfigurationSerialization.registerClass(GlowOfflinePlayer.class);
-            GlowPotionEffect.register();
-            GlowEnchantment.register();
-
             // parse arguments and read config
             final ServerConfig config = parseArguments(args);
             if (config == null) {
                 return;
             }
+
+            ConfigurationSerialization.registerClass(GlowOfflinePlayer.class);
+            GlowPotionEffect.register();
+            GlowEnchantment.register();
 
             // start server
             final GlowServer server = new GlowServer(config);
@@ -145,7 +158,24 @@ public final class GlowServer implements Server {
             server.bindQuery();
             server.bindRcon();
             logger.info("Ready for connections.");
+        } catch (BindException ex) {
+            // descriptive bind error messages
+            logger.severe("The server could not bind to the requested address.");
+            if (ex.getMessage().startsWith("Cannot assign requested address")) {
+                logger.severe("The 'server.ip' in your configuration may not be valid.");
+                logger.severe("Unless you are sure you need it, try removing it.");
+                logger.severe(ex.toString());
+            } else if (ex.getMessage().startsWith("Address already in use")) {
+                logger.severe("The address was already in use. Check that no server is");
+                logger.severe("already running on that port. If needed, try killing all");
+                logger.severe("Java processes using Task Manager or similar.");
+                logger.severe(ex.toString());
+            } else {
+                logger.log(Level.SEVERE, "An unknown bind error has occurred.", ex);
+            }
+            System.exit(1);
         } catch (Throwable t) {
+            // general server startup crash
             logger.log(Level.SEVERE, "Error during server startup.", t);
             System.exit(1);
         }
@@ -324,6 +354,11 @@ public final class GlowServer implements Server {
     private final GlowBanList ipBans;
 
     /**
+     * The EntityIdManager for this server.
+     */
+    private final EntityIdManager entityIdManager = new EntityIdManager();
+
+    /**
      * The world this server is managing.
      */
     private final WorldScheduler worlds = new WorldScheduler();
@@ -399,6 +434,21 @@ public final class GlowServer implements Server {
     private GlowServerIcon defaultIcon;
 
     /**
+     * The server port.
+     */
+    private int port;
+
+    /**
+     * A set of all online players.
+     */
+    private final Set<GlowPlayer> onlinePlayers = new HashSet<>();
+
+    /**
+     * A view of all online players.
+     */
+    private final Set<GlowPlayer> onlineView = Collections.unmodifiableSet(onlinePlayers);
+
+    /**
      * Creates a new server.
      */
     public GlowServer(ServerConfig config) {
@@ -438,6 +488,7 @@ public final class GlowServer implements Server {
         ipBans.load();
 
         // Start loading plugins
+        new LibraryManager(this).run();
         loadPlugins();
         enablePlugins(PluginLoadOrder.STARTUP);
 
@@ -464,9 +515,11 @@ public final class GlowServer implements Server {
 
         createWorld(WorldCreator.name(name).environment(Environment.NORMAL).seed(seed).type(type).generateStructures(structs));
         if (getAllowNether()) {
+            checkTransfer(name, "_nether", Environment.NETHER);
             createWorld(WorldCreator.name(name + "_nether").environment(Environment.NETHER).seed(seed).type(type).generateStructures(structs));
         }
         if (getAllowEnd()) {
+            checkTransfer(name, "_the_end", Environment.THE_END);
             createWorld(WorldCreator.name(name + "_the_end").environment(Environment.THE_END).seed(seed).type(type).generateStructures(structs));
         }
 
@@ -476,18 +529,66 @@ public final class GlowServer implements Server {
         scheduler.start();
     }
 
+    private void checkTransfer(String name, String suffix, Environment environment) {
+        // todo: import things like per-dimension villages.dat when those are implemented
+        final Path srcPath = new File(new File(getWorldContainer(), name), "DIM" + environment.getId()).toPath();
+        final Path destPath = new File(getWorldContainer(), name + suffix).toPath();
+        if (Files.exists(srcPath) && !Files.exists(destPath)) {
+            logger.info("Importing " + destPath + " from " + srcPath);
+            try {
+                Files.walkFileTree(srcPath, new FileVisitor<Path>() {
+                    @Override
+                    public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+                        Path target = destPath.resolve(srcPath.relativize(dir));
+                        if (!Files.exists(target)) {
+                            Files.createDirectory(target);
+                        }
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                        Files.copy(file, destPath.resolve(srcPath.relativize(file)), StandardCopyOption.COPY_ATTRIBUTES);
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public FileVisitResult visitFileFailed(Path file, IOException exc) throws IOException {
+                        logger.warning("Importing file " + srcPath.relativize(file) + " + failed: " + exc);
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+                        return FileVisitResult.CONTINUE;
+                    }
+                });
+                Files.copy(srcPath.resolve("../level.dat"), destPath.resolve("level.dat"));
+            } catch (IOException e) {
+                logger.log(Level.WARNING, "Import of " + srcPath + " failed", e);
+            }
+        }
+    }
+
     /**
      * Binds this server to the address specified in the configuration.
      */
-    private void bind() {
+    private void bind() throws BindException {
         SocketAddress address = getBindAddress(ServerConfig.Key.SERVER_PORT);
 
         logger.info("Binding to address: " + address + "...");
         ChannelFuture future = networkServer.bind(address);
         Channel channel = future.awaitUninterruptibly().channel();
         if (!channel.isActive()) {
-            throw new RuntimeException("Failed to bind to address. Maybe it is already in use?");
+            Throwable cause = future.cause();
+            if (cause instanceof BindException) {
+                throw (BindException) cause;
+            }
+            throw new RuntimeException("Failed to bind to address", cause);
         }
+
+        logger.info("Successfully bound to: " + channel.localAddress());
+        port = ((InetSocketAddress) channel.localAddress()).getPort();
     }
 
     /**
@@ -625,7 +726,7 @@ public final class GlowServer implements Server {
     private void loadPlugins() {
         // clear the map
         commandMap.clearCommands();
-        commandMap.register("glowstone", new ColorCommand("colors"));
+        commandMap.register("glowstone", new ColorCommand());
         commandMap.register("glowstone", new TellrawCommand());
 
         File folder = new File(config.getString(ServerConfig.Key.PLUGIN_FOLDER));
@@ -655,7 +756,7 @@ public final class GlowServer implements Server {
     private void enablePlugins(PluginLoadOrder type) {
         if (type == PluginLoadOrder.STARTUP) {
             helpMap.clear();
-            helpMap.initializeGeneralTopics();
+            helpMap.loadConfig(config.getConfigFile(ServerConfig.Key.HELP_FILE));
         }
 
         // load all the plugins
@@ -684,6 +785,7 @@ public final class GlowServer implements Server {
             commandMap.registerServerAliases();
             DefaultPermissions.registerCorePermissions();
             helpMap.initializeCommands();
+            helpMap.amendTopics(config.getConfigFile(ServerConfig.Key.HELP_FILE));
 
             // load permissions.yml
             ConfigurationSection permConfig = config.getConfigFile(ServerConfig.Key.PERMISSIONS_FILE);
@@ -745,6 +847,14 @@ public final class GlowServer implements Server {
      */
     public SessionRegistry getSessionRegistry() {
         return sessions;
+    }
+
+    /**
+     * Gets the entity id manager.
+     * @return The {@link EntityIdManager}.
+     */
+    public EntityIdManager getEntityIdManager() {
+        return entityIdManager;
     }
 
     /**
@@ -858,6 +968,20 @@ public final class GlowServer implements Server {
      */
     public boolean getAnnounceAchievements() {
         return config.getBoolean(ServerConfig.Key.ANNOUNCE_ACHIEVEMENTS);
+    }
+
+    /**
+     * Sets a player as being online internally.
+     * @param player player to set online/offline
+     * @param online whether the player is online or offline
+     */
+    public void setPlayerOnline(GlowPlayer player, boolean online) {
+        Validate.notNull(player);
+        if (online) {
+            onlinePlayers.add(player);
+        } else {
+            onlinePlayers.remove(player);
+        }
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -1011,14 +1135,7 @@ public final class GlowServer implements Server {
 
     @Override
     public Collection<GlowPlayer> getOnlinePlayers() {
-        // todo: provide a view instead of reassembling the list each time
-        ArrayList<GlowPlayer> result = new ArrayList<>();
-        for (GlowWorld world : worlds.getWorlds()) {
-            for (GlowPlayer player : world.getRawPlayers()) {
-                result.add(player);
-            }
-        }
-        return result;
+        return onlineView;
     }
 
     @Override
@@ -1226,11 +1343,11 @@ public final class GlowServer implements Server {
 
         // find generator based on environment and world type
         if (environment == Environment.NETHER) {
-            return new net.glowstone.generator.UndergroundGenerator();
+            return new UndergroundGenerator();
         } else if (environment == Environment.THE_END) {
-            return new net.glowstone.generator.CakeTownGenerator();
+            return new CakeTownGenerator();
         } else {
-            return new net.glowstone.generator.SurfaceGenerator();
+            return new SurfaceGenerator();
         }
     }
 
@@ -1428,15 +1545,15 @@ public final class GlowServer implements Server {
 
     @Override
     public void configureDbConfig(com.avaje.ebean.config.ServerConfig dbConfig) {
-        com.avaje.ebean.config.DataSourceConfig ds = new com.avaje.ebean.config.DataSourceConfig();
+        DataSourceConfig ds = new DataSourceConfig();
         ds.setDriver(config.getString(ServerConfig.Key.DB_DRIVER));
         ds.setUrl(config.getString(ServerConfig.Key.DB_URL));
         ds.setUsername(config.getString(ServerConfig.Key.DB_USERNAME));
         ds.setPassword(config.getString(ServerConfig.Key.DB_PASSWORD));
-        ds.setIsolationLevel(com.avaje.ebeaninternal.server.lib.sql.TransactionIsolation.getLevel(config.getString(ServerConfig.Key.DB_ISOLATION)));
+        ds.setIsolationLevel(TransactionIsolation.getLevel(config.getString(ServerConfig.Key.DB_ISOLATION)));
 
         if (ds.getDriver().contains("sqlite")) {
-            dbConfig.setDatabasePlatform(new com.avaje.ebean.config.dbplatform.SQLitePlatform());
+            dbConfig.setDatabasePlatform(new SQLitePlatform());
             dbConfig.getDatabasePlatform().getDbDdlSyntax().setIdentity("");
         }
 
@@ -1453,7 +1570,7 @@ public final class GlowServer implements Server {
 
     @Override
     public int getPort() {
-        return config.getInt(ServerConfig.Key.SERVER_PORT);
+        return port;
     }
 
     @Override

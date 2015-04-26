@@ -6,6 +6,7 @@ import java.util.Collection;
 
 import net.glowstone.block.GlowBlock;
 import net.glowstone.block.GlowBlockState;
+import net.glowstone.block.ItemTable;
 import net.glowstone.entity.GlowPlayer;
 
 import org.bukkit.Material;
@@ -18,8 +19,20 @@ import org.bukkit.util.Vector;
 
 public class BlockDoor extends BlockType {
 
+    public BlockDoor(Material itemMaterial) {
+        setDrops(new ItemStack(itemMaterial));
+    }
+
+    @Override
     public boolean canPlaceAt(GlowBlock block, BlockFace against) {
-        return (against == BlockFace.UP);
+        GlowBlock topHalf = block.getRelative(BlockFace.UP);
+        if (!topHalf.isEmpty()) {
+            BlockType type = ItemTable.instance().getBlock(topHalf.getType());
+            if (!type.canOverride(topHalf, BlockFace.UP, null)) {
+                return false;
+            }
+        }
+        return against == BlockFace.UP;
     }
 
     /**
@@ -27,6 +40,7 @@ public class BlockDoor extends BlockType {
      */
     @Override
     public boolean blockDestroy(GlowPlayer player, GlowBlock block, BlockFace face, Vector clickedLoc) {
+        // remove the other half of the door
         GlowBlockState state = block.getState();
         MaterialData data = state.getData();
 
@@ -47,96 +61,66 @@ public class BlockDoor extends BlockType {
     }
 
     /**
-     * Returns the corresponding ItemDoor to the one being broken.
-     */
-    public Collection<ItemStack> getDrops(GlowBlock block, ItemStack tool) {
-        Material dropType = null;
-        switch (block.getType()) {
-        case WOODEN_DOOR:
-            dropType = Material.WOOD_DOOR;
-            break;
-        case IRON_DOOR_BLOCK:
-            dropType = Material.IRON_DOOR;
-            break;
-        case SPRUCE_DOOR:
-            dropType = Material.SPRUCE_DOOR_ITEM;
-            break;
-        case BIRCH_DOOR:
-            dropType = Material.BIRCH_DOOR_ITEM;
-            break;
-        case JUNGLE_DOOR:
-            dropType = Material.JUNGLE_DOOR_ITEM;
-            break;
-        case ACACIA_DOOR:
-            dropType = Material.ACACIA_DOOR_ITEM;
-            break;
-        case DARK_OAK_DOOR:
-            dropType = Material.DARK_OAK_DOOR_ITEM;
-            break;
-        default:
-            break;
-        }
-
-        if (dropType != null)
-            return Arrays.asList(new ItemStack(dropType, 1));
-        else
-            return new ArrayList<ItemStack>();
-    }
-
-    /**
      * Places the door held by the player, sets the direction it's facing and
      * creates the top half of the door.
      */
     @Override
     public void placeBlock(GlowPlayer player, GlowBlockState state, BlockFace face, ItemStack holding, Vector clickedLoc) {
+        // place the door and calculate the facing
         super.placeBlock(player, state, face, holding, clickedLoc);
 
         MaterialData data = state.getData();
-        if (data instanceof Door) {
-            BlockFace facing = player.getDirection();
-            ((Door) data).setFacingDirection(facing.getOppositeFace());
+        if (!(data instanceof Door)) {
+            warnMaterialData(Door.class, data);
+            return;
+        }
+        BlockFace facing = player.getDirection();
+        ((Door) data).setFacingDirection(facing.getOppositeFace());
 
-            GlowBlock leftBlock = null;
+        // modify facing for double-doors
+        GlowBlock leftBlock = null;
+        switch (facing) {
+        case NORTH:
+            leftBlock = state.getBlock().getRelative(BlockFace.WEST);
+            break;
+        case WEST:
+            leftBlock = state.getBlock().getRelative(BlockFace.SOUTH);
+            break;
+        case SOUTH:
+            leftBlock = state.getBlock().getRelative(BlockFace.EAST);
+            break;
+        case EAST:
+            leftBlock = state.getBlock().getRelative(BlockFace.NORTH);
+            break;
+
+        }
+
+        if (leftBlock != null && leftBlock.getState().getData() instanceof Door) {
             switch (facing) {
             case NORTH:
-                leftBlock = state.getBlock().getRelative(BlockFace.WEST);
+                data.setData((byte) 6);
                 break;
             case WEST:
-                leftBlock = state.getBlock().getRelative(BlockFace.SOUTH);
+                data.setData((byte) 5);
                 break;
             case SOUTH:
-                leftBlock = state.getBlock().getRelative(BlockFace.EAST);
+                data.setData((byte) 4);
                 break;
             case EAST:
-                leftBlock = state.getBlock().getRelative(BlockFace.NORTH);
+                data.setData((byte) 7);
                 break;
             }
+        }
 
-            if (leftBlock != null && leftBlock.getState().getData() instanceof Door) {
-                switch (facing) {
-                case NORTH:
-                    ((Door) data).setData((byte) 6);
-                    break;
-                case WEST:
-                    ((Door) data).setData((byte) 5);
-                    break;
-                case SOUTH:
-                    ((Door) data).setData((byte) 4);
-                    break;
-                case EAST:
-                    ((Door) data).setData((byte) 7);
-                    break;
-                }
-            }
-
-            GlowBlock topHalf = state.getBlock().getRelative(BlockFace.UP);
-
-            topHalf.setType(state.getType());
-            GlowBlockState topState = topHalf.getState();
-            ((Door) topState.getData()).setTopHalf(true);
-            topState.update();
-        } else {
+        // place top half of door
+        GlowBlockState topState = state.getBlock().getRelative(BlockFace.UP).getState();
+        topState.setType(state.getType());
+        MaterialData topData = topState.getData();
+        if (!(topData instanceof Door)) {
             warnMaterialData(Door.class, data);
+        } else {
+            ((Door) topData).setTopHalf(true);
+            topState.update(true);
         }
     }
 
@@ -145,8 +129,7 @@ public class BlockDoor extends BlockType {
      */
     @Override
     public boolean blockInteract(GlowPlayer player, GlowBlock block, BlockFace face, Vector clickedLoc) {
-        super.blockInteract(player, block, face, clickedLoc);
-
+        // handles opening and closing the door
         if (block.getType() == Material.IRON_DOOR_BLOCK)
             return false;
 
@@ -158,12 +141,11 @@ public class BlockDoor extends BlockType {
             if (door.isTopHalf()) {
                 door = null;
                 block = block.getWorld().getBlockAt(block.getX(), block.getY() - 1, block.getZ());
-                if (block != null) {
-                    state = block.getState();
-                    data = state.getData();
-                    if (data instanceof Door) {
-                        door = (Door) data;
-                    }
+
+                state = block.getState();
+                data = state.getData();
+                if (data instanceof Door) {
+                    door = (Door) data;
                 }
             }
 

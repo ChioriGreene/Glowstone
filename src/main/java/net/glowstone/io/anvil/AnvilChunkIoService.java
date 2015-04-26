@@ -33,19 +33,14 @@ public final class AnvilChunkIoService implements ChunkIoService {
     private static final int REGION_SIZE = 32;
 
     /**
-     * The root directory of the map.
-     */
-    private final File dir;
-
-    /**
      * The region file cache.
      */
-    private final RegionFileCache cache = new RegionFileCache(".mca");
+    private final RegionFileCache cache;
 
     // todo: consider the session.lock file
 
     public AnvilChunkIoService(File dir) {
-        this.dir = dir;
+        cache = new RegionFileCache(dir, ".mca");
     }
 
     /**
@@ -57,7 +52,7 @@ public final class AnvilChunkIoService implements ChunkIoService {
     @Override
     public boolean read(GlowChunk chunk) throws IOException {
         int x = chunk.getX(), z = chunk.getZ();
-        RegionFile region = cache.getRegionFile(dir, x, z);
+        RegionFile region = cache.getRegionFile(x, z);
         int regionX = x & (REGION_SIZE - 1);
         int regionZ = z & (REGION_SIZE - 1);
         if (!region.hasChunk(regionX, regionZ)) {
@@ -98,6 +93,12 @@ public final class AnvilChunkIoService implements ChunkIoService {
         if (levelTag.isByteArray("Biomes")) {
             chunk.setBiomes(levelTag.getByteArray("Biomes"));
         }
+        // read height map
+        if (levelTag.isIntArray("HeightMap")) {
+            chunk.setHeightMap(levelTag.getIntArray("HeightMap"));
+        } else {
+            chunk.automaticHeightMap();
+        }
 
         // read entities
         if (levelTag.isList("Entities", TagType.COMPOUND)) {
@@ -106,12 +107,15 @@ public final class AnvilChunkIoService implements ChunkIoService {
                     // note that creating the entity is sufficient to add it to the world
                     EntityStorage.loadEntity(chunk.getWorld(), entityTag);
                 } catch (Exception e) {
-                    GlowServer.logger.log(Level.WARNING, "Error loading entity in " + chunk, e);
+                    String id = entityTag.isString("id") ? entityTag.getString("id") : "<missing>";
+                    if (e.getMessage() != null && e.getMessage().startsWith("Unknown entity type to load:")) {
+                        GlowServer.logger.warning("Unknown entity in " + chunk + ": " + id);
+                    } else {
+                        GlowServer.logger.log(Level.WARNING, "Error loading entity in " + chunk + ": " + id, e);
+                    }
                 }
             }
         }
-
-        // read "HeightMap" if we need to
 
         // read tile entities
         List<CompoundTag> storedTileEntities = levelTag.getCompoundList("TileEntities");
@@ -124,10 +128,12 @@ public final class AnvilChunkIoService implements ChunkIoService {
                 try {
                     tileEntity.loadNbt(tileEntityTag);
                 } catch (Exception ex) {
-                    GlowServer.logger.log(Level.SEVERE, "Error loading TileEntity at " + tileEntity.getBlock(), ex);
+                    String id = tileEntityTag.isString("id") ? tileEntityTag.getString("id") : "<missing>";
+                    GlowServer.logger.log(Level.SEVERE, "Error loading tile entity at " + tileEntity.getBlock() + ": " + id, ex);
                 }
             } else {
-                GlowServer.logger.warning("No tile entity at " + chunk.getWorld() + "," + tx + "," + ty + "," + tz);
+                String id = tileEntityTag.isString("id") ? tileEntityTag.getString("id") : "<missing>";
+                GlowServer.logger.warning("Unknown tile entity at " + chunk.getWorld().getName() + "," + tx + "," + ty + "," + tz + ": " + id);
             }
         }
 
@@ -142,7 +148,7 @@ public final class AnvilChunkIoService implements ChunkIoService {
     @Override
     public void write(GlowChunk chunk) throws IOException {
         int x = chunk.getX(), z = chunk.getZ();
-        RegionFile region = cache.getRegionFile(dir, x, z);
+        RegionFile region = cache.getRegionFile(x, z);
         int regionX = x & (REGION_SIZE - 1);
         int regionZ = z & (REGION_SIZE - 1);
 
