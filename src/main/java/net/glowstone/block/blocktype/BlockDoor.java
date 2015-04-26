@@ -42,7 +42,7 @@ public class BlockDoor extends BlockType {
                     b.setType(Material.AIR);
             }
         }
-        
+
         return true;
     }
 
@@ -176,4 +176,48 @@ public class BlockDoor extends BlockType {
         return true;
     }
 
+    /*
+     * Should provide redstone support to the doors, if and when the Redstone Framework is implemented. UNTESTED!
+    @Override
+    public void traceBlockPower(GlowBlock block, RSManager rsManager, Material srcMat, BlockFace flowDir, int inPower, boolean isDirect) {
+         GlowBlock orginalBlock = block;
+         GlowBlockState state = block.getState();
+         MaterialData data = state.getData();
+         if (data instanceof Door) {
+              Door door = (Door) data;
+
+              if (door.isTopHalf()) {
+                   door = null;
+                   block = block.getRelative(BlockFace.DOWN);
+                   if (block != null) {
+                        state = block.getState();
+                        data = state.getData();
+                        if (data instanceof Door) {
+                             door = (Door) data;
+                        }
+                   }
+              }
+
+              if (door != null) {
+                   int power = block.getBlockPower();
+                   GlowBlock topBlock = block.getRelative(BlockFace.UP);
+                   int topPower = (topBlock.getState().getData() instanceof Door) ? topBlock.getBlockPower() : 0;
+
+                   if (topPower > power)
+                        power = topPower;
+
+                   int oldPower = ((block.getData() & 0x4) > 0) ? 15 : 0;
+
+                   if (((oldPower == 0 ? 1 : 0) ^ (power == 0 ? 1 : 0)) != 0) {
+                        BlockRedstoneEvent eventRedstone = new BlockRedstoneEvent(orginalBlock, oldPower, power);
+                        EventFactory.callEvent(eventRedstone);
+
+                        door.setOpen(eventRedstone.getNewCurrent() > 0);
+                   }
+              }
+         } else {
+              warnMaterialData(Door.class, data);
+         }
+    }
+    */
 }

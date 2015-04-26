@@ -1,12 +1,73 @@
 package net.glowstone.block;
 
-import net.glowstone.block.blocktype.*;
-import net.glowstone.block.itemtype.*;
-import net.glowstone.inventory.ToolType;
-import org.bukkit.Material;
-
 import java.util.HashMap;
 import java.util.Map;
+
+import net.glowstone.block.blocktype.BlockAnvil;
+import net.glowstone.block.blocktype.BlockBanner;
+import net.glowstone.block.blocktype.BlockBed;
+import net.glowstone.block.blocktype.BlockBrewingStand;
+import net.glowstone.block.blocktype.BlockButton;
+import net.glowstone.block.blocktype.BlockChest;
+import net.glowstone.block.blocktype.BlockDaylightDetector;
+import net.glowstone.block.blocktype.BlockDirectDrops;
+import net.glowstone.block.blocktype.BlockDispenser;
+import net.glowstone.block.blocktype.BlockDoor;
+import net.glowstone.block.blocktype.BlockDoubleSlab;
+import net.glowstone.block.blocktype.BlockDropless;
+import net.glowstone.block.blocktype.BlockDropper;
+import net.glowstone.block.blocktype.BlockEnchantmentTable;
+import net.glowstone.block.blocktype.BlockEnderPortalFrame;
+import net.glowstone.block.blocktype.BlockEnderchest;
+import net.glowstone.block.blocktype.BlockFenceGate;
+import net.glowstone.block.blocktype.BlockFire;
+import net.glowstone.block.blocktype.BlockFurnace;
+import net.glowstone.block.blocktype.BlockGravel;
+import net.glowstone.block.blocktype.BlockHay;
+import net.glowstone.block.blocktype.BlockHopper;
+import net.glowstone.block.blocktype.BlockHugeMushroom;
+import net.glowstone.block.blocktype.BlockIronTrapDoor;
+import net.glowstone.block.blocktype.BlockLadder;
+import net.glowstone.block.blocktype.BlockLava;
+import net.glowstone.block.blocktype.BlockLeaves;
+import net.glowstone.block.blocktype.BlockLever;
+import net.glowstone.block.blocktype.BlockLog;
+import net.glowstone.block.blocktype.BlockLog2;
+import net.glowstone.block.blocktype.BlockMelon;
+import net.glowstone.block.blocktype.BlockMelonStem;
+import net.glowstone.block.blocktype.BlockMobSpawner;
+import net.glowstone.block.blocktype.BlockNote;
+import net.glowstone.block.blocktype.BlockPumpkinStem;
+import net.glowstone.block.blocktype.BlockQuartz;
+import net.glowstone.block.blocktype.BlockRandomDrops;
+import net.glowstone.block.blocktype.BlockSign;
+import net.glowstone.block.blocktype.BlockSkull;
+import net.glowstone.block.blocktype.BlockSlab;
+import net.glowstone.block.blocktype.BlockSnow;
+import net.glowstone.block.blocktype.BlockStairs;
+import net.glowstone.block.blocktype.BlockStone;
+import net.glowstone.block.blocktype.BlockTallGrass;
+import net.glowstone.block.blocktype.BlockTorch;
+import net.glowstone.block.blocktype.BlockType;
+import net.glowstone.block.blocktype.BlockVine;
+import net.glowstone.block.blocktype.BlockWater;
+import net.glowstone.block.blocktype.BlockWeb;
+import net.glowstone.block.blocktype.BlockWoodenTrapDoor;
+import net.glowstone.block.blocktype.BlockWorkbench;
+import net.glowstone.block.itemtype.ItemBanner;
+import net.glowstone.block.itemtype.ItemBucket;
+import net.glowstone.block.itemtype.ItemDoor;
+import net.glowstone.block.itemtype.ItemDye;
+import net.glowstone.block.itemtype.ItemFilledBucket;
+import net.glowstone.block.itemtype.ItemFoodSeeds;
+import net.glowstone.block.itemtype.ItemHoe;
+import net.glowstone.block.itemtype.ItemPlaceAs;
+import net.glowstone.block.itemtype.ItemSeeds;
+import net.glowstone.block.itemtype.ItemSign;
+import net.glowstone.block.itemtype.ItemType;
+import net.glowstone.inventory.ToolType;
+
+import org.bukkit.Material;
 
 /**
  * The lookup table for block and item types.
