@@ -26,7 +26,7 @@ public class BlockDoor extends BlockType {
      * Removes the adjacent door block to the door
      */
     @Override
-    public void blockDestroy(GlowPlayer player, GlowBlock block, BlockFace face) {
+    public boolean blockDestroy(GlowPlayer player, GlowBlock block, BlockFace face, Vector clickedLoc) {
         GlowBlockState state = block.getState();
         MaterialData data = state.getData();
 
@@ -42,39 +42,41 @@ public class BlockDoor extends BlockType {
                     b.setType(Material.AIR);
             }
         }
+        
+        return true;
     }
-    
+
     /**
      * Returns the corresponding ItemDoor to the one being broken.
      */
     public Collection<ItemStack> getDrops(GlowBlock block, ItemStack tool) {
         Material dropType = null;
         switch (block.getType()) {
-            case WOODEN_DOOR:
-                dropType = Material.WOOD_DOOR;
-                break;
-            case IRON_DOOR_BLOCK:
-                dropType = Material.IRON_DOOR;
-                break;
-            case SPRUCE_DOOR:
-                dropType = Material.SPRUCE_DOOR_ITEM;
-                break;
-            case BIRCH_DOOR:
-                dropType = Material.BIRCH_DOOR_ITEM;
-                break;
-            case JUNGLE_DOOR:
-                dropType = Material.JUNGLE_DOOR_ITEM;
-                break;
-            case ACACIA_DOOR:
-                dropType = Material.ACACIA_DOOR_ITEM;
-                break;
-            case DARK_OAK_DOOR:
-                dropType = Material.DARK_OAK_DOOR_ITEM;
-                break;
-            default:
-                break;
+        case WOODEN_DOOR:
+            dropType = Material.WOOD_DOOR;
+            break;
+        case IRON_DOOR_BLOCK:
+            dropType = Material.IRON_DOOR;
+            break;
+        case SPRUCE_DOOR:
+            dropType = Material.SPRUCE_DOOR_ITEM;
+            break;
+        case BIRCH_DOOR:
+            dropType = Material.BIRCH_DOOR_ITEM;
+            break;
+        case JUNGLE_DOOR:
+            dropType = Material.JUNGLE_DOOR_ITEM;
+            break;
+        case ACACIA_DOOR:
+            dropType = Material.ACACIA_DOOR_ITEM;
+            break;
+        case DARK_OAK_DOOR:
+            dropType = Material.DARK_OAK_DOOR_ITEM;
+            break;
+        default:
+            break;
         }
-        
+
         if (dropType != null)
             return Arrays.asList(new ItemStack(dropType, 1));
         else

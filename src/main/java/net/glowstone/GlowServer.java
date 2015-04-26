@@ -2,6 +2,26 @@ package net.glowstone;
 
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
+
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+import java.security.KeyPair;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.Set;
+import java.util.UUID;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
 import net.glowstone.command.ColorCommand;
 import net.glowstone.command.TellrawCommand;
 import net.glowstone.constants.GlowEnchantment;
@@ -18,38 +38,61 @@ import net.glowstone.net.query.QueryServer;
 import net.glowstone.net.rcon.RconServer;
 import net.glowstone.scheduler.GlowScheduler;
 import net.glowstone.scheduler.WorldScheduler;
-import net.glowstone.util.*;
+import net.glowstone.util.GlowHelpMap;
+import net.glowstone.util.GlowServerIcon;
+import net.glowstone.util.GlowUnsafeValues;
+import net.glowstone.util.SecurityUtils;
+import net.glowstone.util.ServerConfig;
+import net.glowstone.util.ShutdownMonitorThread;
 import net.glowstone.util.bans.GlowBanList;
 import net.glowstone.util.bans.UuidListFile;
-import org.bukkit.*;
+
+import org.bukkit.BanEntry;
+import org.bukkit.BanList;
+import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
+import org.bukkit.Difficulty;
+import org.bukkit.GameMode;
+import org.bukkit.OfflinePlayer;
+import org.bukkit.Server;
+import org.bukkit.UnsafeValues;
+import org.bukkit.Warning;
+import org.bukkit.World;
 import org.bukkit.World.Environment;
-import org.bukkit.command.*;
+import org.bukkit.WorldCreator;
+import org.bukkit.WorldType;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandException;
+import org.bukkit.command.CommandSender;
+import org.bukkit.command.ConsoleCommandSender;
+import org.bukkit.command.PluginCommand;
+import org.bukkit.command.SimpleCommandMap;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.serialization.ConfigurationSerialization;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.help.HelpMap;
-import org.bukkit.inventory.*;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.InventoryHolder;
+import org.bukkit.inventory.ItemFactory;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.Recipe;
 import org.bukkit.permissions.Permissible;
 import org.bukkit.permissions.Permission;
 import org.bukkit.permissions.PermissionDefault;
-import org.bukkit.plugin.*;
+import org.bukkit.plugin.Plugin;
+import org.bukkit.plugin.PluginLoadOrder;
+import org.bukkit.plugin.PluginManager;
+import org.bukkit.plugin.ServicesManager;
+import org.bukkit.plugin.SimplePluginManager;
+import org.bukkit.plugin.SimpleServicesManager;
 import org.bukkit.plugin.java.JavaPluginLoader;
 import org.bukkit.plugin.messaging.Messenger;
 import org.bukkit.plugin.messaging.StandardMessenger;
 import org.bukkit.scoreboard.ScoreboardManager;
 import org.bukkit.util.CachedServerIcon;
 import org.bukkit.util.permissions.DefaultPermissions;
-
-import java.awt.image.BufferedImage;
-import java.io.File;
-import java.net.InetSocketAddress;
-import java.net.SocketAddress;
-import java.security.KeyPair;
-import java.util.*;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 /**
  * The core class of the Glowstone server.
@@ -154,53 +197,53 @@ public final class GlowServer implements Server {
             }
 
             switch (opt) {
-                case "--configdir":
-                    configDirName = args[++i];
-                    break;
-                case "--configfile":
-                    configFileName = args[++i];
-                    break;
-                case "--port":
-                case "-p":
-                    parameters.put(ServerConfig.Key.SERVER_PORT, Integer.valueOf(args[++i]));
-                    break;
-                case "--host":
-                case "-H":
-                    parameters.put(ServerConfig.Key.SERVER_IP, args[++i]);
-                    break;
-                case "--onlinemode":
-                case "-o":
-                    parameters.put(ServerConfig.Key.ONLINE_MODE, Boolean.valueOf(args[++i]));
-                    break;
-                case "--jline":
-                    parameters.put(ServerConfig.Key.USE_JLINE, Boolean.valueOf(args[++i]));
-                    break;
-                case "--plugins-dir":
-                case "-P":
-                    parameters.put(ServerConfig.Key.PLUGIN_FOLDER, args[++i]);
-                    break;
-                case "--worlds-dir":
-                case "-W":
-                    parameters.put(ServerConfig.Key.WORLD_FOLDER, args[++i]);
-                    break;
-                case "--update-dir":
-                case "-U":
-                    parameters.put(ServerConfig.Key.UPDATE_FOLDER, args[++i]);
-                    break;
-                case "--max-players":
-                case "-M":
-                    parameters.put(ServerConfig.Key.MAX_PLAYERS, Integer.valueOf(args[++i]));
-                    break;
-                case "--world-name":
-                case "-N":
-                    parameters.put(ServerConfig.Key.LEVEL_NAME, args[++i]);
-                    break;
-                case "--log-pattern":
-                case "-L":
-                    parameters.put(ServerConfig.Key.LOG_FILE, args[++i]);
-                    break;
-                default:
-                    System.err.println("Ignored invalid option: " + opt);
+            case "--configdir":
+                configDirName = args[++i];
+                break;
+            case "--configfile":
+                configFileName = args[++i];
+                break;
+            case "--port":
+            case "-p":
+                parameters.put(ServerConfig.Key.SERVER_PORT, Integer.valueOf(args[++i]));
+                break;
+            case "--host":
+            case "-H":
+                parameters.put(ServerConfig.Key.SERVER_IP, args[++i]);
+                break;
+            case "--onlinemode":
+            case "-o":
+                parameters.put(ServerConfig.Key.ONLINE_MODE, Boolean.valueOf(args[++i]));
+                break;
+            case "--jline":
+                parameters.put(ServerConfig.Key.USE_JLINE, Boolean.valueOf(args[++i]));
+                break;
+            case "--plugins-dir":
+            case "-P":
+                parameters.put(ServerConfig.Key.PLUGIN_FOLDER, args[++i]);
+                break;
+            case "--worlds-dir":
+            case "-W":
+                parameters.put(ServerConfig.Key.WORLD_FOLDER, args[++i]);
+                break;
+            case "--update-dir":
+            case "-U":
+                parameters.put(ServerConfig.Key.UPDATE_FOLDER, args[++i]);
+                break;
+            case "--max-players":
+            case "-M":
+                parameters.put(ServerConfig.Key.MAX_PLAYERS, Integer.valueOf(args[++i]));
+                break;
+            case "--world-name":
+            case "-N":
+                parameters.put(ServerConfig.Key.LEVEL_NAME, args[++i]);
+                break;
+            case "--log-pattern":
+            case "-L":
+                parameters.put(ServerConfig.Key.LOG_FILE, args[++i]);
+                break;
+            default:
+                System.err.println("Ignored invalid option: " + opt);
             }
         }
 
@@ -892,12 +935,12 @@ public final class GlowServer implements Server {
     @Override
     public BanList getBanList(BanList.Type type) {
         switch (type) {
-            case NAME:
-                return nameBans;
-            case IP:
-                return ipBans;
-            default:
-                throw new IllegalArgumentException("Unknown BanList type " + type);
+        case NAME:
+            return nameBans;
+        case IP:
+            return ipBans;
+        default:
+            throw new IllegalArgumentException("Unknown BanList type " + type);
         }
     }
 

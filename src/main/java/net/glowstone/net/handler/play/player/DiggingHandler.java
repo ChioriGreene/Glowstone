@@ -1,7 +1,6 @@
 package net.glowstone.net.handler.play.player;
 
 import com.flowpowered.networking.MessageHandler;
-
 import net.glowstone.EventFactory;
 import net.glowstone.GlowWorld;
 import net.glowstone.block.GlowBlock;
@@ -22,6 +21,9 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockDamageEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.util.Vector;
+
+import com.flowpowered.networking.MessageHandler;
 
 public final class DiggingHandler implements MessageHandler<GlowSession, DiggingMessage> {
     @Override
@@ -88,7 +90,7 @@ public final class DiggingHandler implements MessageHandler<GlowSession, Digging
 
             BlockType blockType = ItemTable.instance().getBlock(block.getType());
             if (blockType != null) {
-                blockType.blockDestroy(player, block, face);
+                blockType.blockDestroy(player, block, face, new Vector(message.getX(), message.getY(), message.getZ()));
             }
 
             // destroy the block

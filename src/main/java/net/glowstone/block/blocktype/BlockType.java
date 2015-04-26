@@ -118,13 +118,16 @@ public class BlockType extends ItemType {
     }
 
     /**
-     * Called when a player attempts to destroy a block.
-     * @param player The player interacting
-     * @param block The block the player destroyed
-     * @param face The block face
+     * Called when a player attempts to interact with (right-click) a block of
+     * this type already in the world.
+     * @param player the player interacting
+     * @param block the block interacted with
+     * @param face the clicked face
+     * @param clickedLoc where in the block the click occurred
+     * @return Whether the interaction occurred.
      */
-    public void blockDestroy(GlowPlayer player, GlowBlock block, BlockFace face) {
-        // do nothing
+    public boolean blockDestroy(GlowPlayer player, GlowBlock block, BlockFace face, Vector clickedLoc) {
+        return false;
     }
 
     /**
